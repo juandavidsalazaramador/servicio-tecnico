@@ -54,7 +54,8 @@
               <q-card-section>
                 <div class="q-mb-sm">
                   <q-icon name="build" color="primary" />
-                  <strong> Reparación:</strong> {{ servicio.reparacion }}
+                  <strong> Reparación:</strong> 
+                  {{ Array.isArray(servicio.reparacion) ? servicio.reparacion.join(', ') : servicio.reparacion }}
                 </div>
                 <div class="q-mb-sm">
                   <q-icon name="engineering" color="grey-7" />
@@ -151,9 +152,12 @@
                 :rules="[reglaRequerido]" class="col-12 col-sm-6 q-mb-md" />
             </div>
 
+            <!-- Selección múltiple de reparaciones -->
             <q-select v-model="formulario.reparacion"
               label="Tipo de reparación *" outlined
-              :options="tiposReparacion" :rules="[reglaRequerido]"
+              multiple
+              use-chips
+              :options="tiposReparacion" :rules="[reglaRequeridoMultiple]"
               class="q-mb-md" />
 
             <q-select v-model="formulario.tecnico" label="Técnico *"
@@ -193,9 +197,6 @@
               :options="estadosEquipo" :rules="[reglaRequerido]"
               class="q-mb-md" />
 
-            <!-- La calificación NO forma parte del registro inicial.
-                 Se realiza desde la tarjeta una vez que el servicio está entregado. -->
-
             <q-input v-model="formulario.observaciones"
               label="Observaciones" type="textarea" outlined rows="3" />
           </q-card-section>
@@ -210,7 +211,7 @@
       </q-card>
     </q-dialog>
 
-    <!-- Confirmación interna, no usa alertas de Windows ni alert() -->
+    <!-- Confirmación de eliminación -->
     <q-dialog v-model="dialogoEliminar">
       <q-card>
         <q-card-section>
@@ -228,7 +229,7 @@
       </q-card>
     </q-dialog>
 
-    <!-- Calificación independiente del formulario de registro -->
+    <!-- Modal de calificación -->
     <q-dialog v-model="dialogoCalificacion">
       <q-card style="width:420px;max-width:95vw">
         <q-card-section class="bg-orange text-white">
@@ -308,7 +309,7 @@ function crearFormulario() {
     cliente: '',
     marca: '',
     modelo: '',
-    reparacion: '',
+    reparacion: [], // Inicializado como arreglo para selección múltiple
     tecnico: '',
     fecha: obtenerFechaActual(),
     hora: obtenerHoraActual(),
@@ -362,6 +363,11 @@ function reglaRequerido(valor) {
     || 'Este campo es obligatorio'
 }
 
+function reglaRequeridoMultiple(valor) {
+  return (Array.isArray(valor) && valor.length > 0)
+    || 'Selecciona al menos un tipo de reparación'
+}
+
 function reglaPrecio(valor) {
   if (valor === '' || valor === null || valor === undefined) {
     return 'El precio es obligatorio'
@@ -398,12 +404,10 @@ function cerrarFormulario() {
 }
 
 function guardarServicio() {
-  // Segunda barrera para evitar registros con campos obligatorios vacíos.
   const obligatorios = [
     formulario.value.cliente,
     formulario.value.marca,
     formulario.value.modelo,
-    formulario.value.reparacion,
     formulario.value.tecnico,
     formulario.value.fecha,
     formulario.value.hora,
@@ -413,7 +417,13 @@ function guardarServicio() {
     formulario.value.estadoEquipo
   ]
 
+  // Validar campos de texto vacíos
   if (obligatorios.some(valor => valor === '' || valor === null || valor === undefined)) {
+    return
+  }
+
+  // Validar selección múltiple de reparaciones
+  if (!Array.isArray(formulario.value.reparacion) || formulario.value.reparacion.length === 0) {
     return
   }
 
@@ -445,11 +455,19 @@ function editarServicio(index) {
   const servicio = servicios.value[index]
   if (!servicio || servicio.estadoEquipo === 'Entregado') return
 
-  // Compatibilidad con registros antiguos que todavía no tenían marca.
+  // Asegura compatibilidad si la reparación antigua venía guardada como texto plano
+  let reparacionFormateada = []
+  if (Array.isArray(servicio.reparacion)) {
+    reparacionFormateada = [...servicio.reparacion]
+  } else if (servicio.reparacion) {
+    reparacionFormateada = [servicio.reparacion]
+  }
+
   formulario.value = {
     ...crearFormulario(),
     ...servicio,
-    marca: servicio.marca || ''
+    marca: servicio.marca || '',
+    reparacion: reparacionFormateada
   }
   editando.value = true
   indiceEditar.value = index
