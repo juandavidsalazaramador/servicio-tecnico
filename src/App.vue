@@ -93,7 +93,7 @@
 
         <!-- Lista de Servicios Filtrados -->
         <div v-else class="row q-col-gutter-md">
-          <div v-for="(servicio, index) in serviciosFiltrados" :key="servicio.id"
+          <div v-for="servicio in serviciosFiltrados" :key="servicio.id"
             class="col-12 col-md-6 col-lg-4">
             <q-card bordered
               :class="{ 'border-negative': servicio.estadoPago === 'Pendiente' }">
@@ -173,17 +173,20 @@
 
               <q-separator />
 
+              <!-- Acciones de la tarjeta -->
               <q-card-actions align="right">
-                <template v-if="servicio.estadoEquipo !== 'Entregado'">
-                  <q-btn flat color="primary" icon="edit" label="Editar"
-                    @click="editarServicioPorId(servicio.id)" />
-                  <q-btn flat color="negative" icon="delete" label="Eliminar"
-                    @click="confirmarEliminarPorId(servicio.id)" />
-                </template>
+                <!-- Si NO está entregado, permite Editar -->
+                <q-btn v-if="servicio.estadoEquipo !== 'Entregado'" flat color="primary" icon="edit" label="Editar"
+                  @click="editarServicioPorId(servicio.id)" />
 
-                <q-chip v-else color="grey-7" text-color="white" icon="lock">
-                  Registro bloqueado
+                <!-- Indicador de edición bloqueada cuando está Entregado -->
+                <q-chip v-else color="grey-6" text-color="white" icon="lock" size="sm">
+                  Edición bloqueada
                 </q-chip>
+
+                <!-- El botón ELIMINAR siempre disponible -->
+                <q-btn flat color="negative" icon="delete" label="Eliminar"
+                  @click="confirmarEliminarPorId(servicio.id)" />
               </q-card-actions>
             </q-card>
           </div>
@@ -617,7 +620,7 @@ function editarServicioPorId(id) {
 
 function confirmarEliminarPorId(id) {
   const servicio = servicios.value.find(s => s.id === id)
-  if (!servicio || servicio.estadoEquipo === 'Entregado') return
+  if (!servicio) return
 
   idSeleccionado.value = id
   dialogoEliminar.value = true
@@ -625,7 +628,7 @@ function confirmarEliminarPorId(id) {
 
 function eliminarServicio() {
   const idx = servicios.value.findIndex(s => s.id === idSeleccionado.value)
-  if (idx !== -1 && servicios.value[idx]?.estadoEquipo !== 'Entregado') {
+  if (idx !== -1) {
     servicios.value.splice(idx, 1)
   }
   idSeleccionado.value = null
