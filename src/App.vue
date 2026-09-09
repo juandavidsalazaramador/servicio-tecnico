@@ -13,6 +13,7 @@
 
     <q-page-container>
       <q-page class="q-pa-md">
+        <!-- Resumen de Tarjetas -->
         <div class="row q-col-gutter-md q-mb-lg">
           <div v-for="dato in resumen" :key="dato.texto" class="col-12 col-sm-4">
             <q-card bordered>
@@ -24,6 +25,52 @@
           </div>
         </div>
 
+        <!-- Seccion de Busqueda y Filtros Rápidos -->
+        <q-card class="q-mb-lg q-pa-md" bordered>
+          <div class="row q-col-gutter-md items-center">
+            <!-- Input de Búsqueda -->
+            <div class="col-12 col-md-5">
+              <q-input
+                v-model="filtroTexto"
+                placeholder="Buscar por cliente, marca o modelo..."
+                outlined
+                dense
+                clearable
+              >
+                <template v-slot:prepend>
+                  <q-icon name="search" />
+                </template>
+              </q-input>
+            </div>
+
+            <!-- Filtros por Estado del Equipo -->
+            <div class="col-12 col-md-7 row items-center q-gutter-xs">
+              <q-btn
+                v-for="opcion in opcionesFiltroEstado"
+                :key="opcion.valor"
+                :label="opcion.etiqueta"
+                :color="filtroEstado === opcion.valor ? 'primary' : 'grey-4'"
+                :text-color="filtroEstado === opcion.valor ? 'white' : 'dark'"
+                size="sm"
+                unelevated
+                @click="filtroEstado = opcion.valor"
+              />
+
+              <!-- Filtro rápido de Pendientes de Pago -->
+              <q-btn
+                label="Solo Pendientes Pago"
+                :color="filtroPendientesPago ? 'negative' : 'grey-4'"
+                :text-color="filtroPendientesPago ? 'white' : 'dark'"
+                size="sm"
+                unelevated
+                icon="warning"
+                @click="filtroPendientesPago = !filtroPendientesPago"
+              />
+            </div>
+          </div>
+        </q-card>
+
+        <!-- Mensaje cuando no hay registros en absoluto -->
         <q-card v-if="!servicios.length" class="q-pa-xl text-center">
           <q-icon name="build" size="70px" color="grey-5" />
           <div class="text-h6 q-mt-md">No hay servicios registrados</div>
@@ -34,8 +81,19 @@
             label="Registrar servicio" @click="abrirFormulario" />
         </q-card>
 
+        <!-- Mensaje cuando la búsqueda/filtro no devuelve resultados -->
+        <q-card v-else-if="!serviciosFiltrados.length" class="q-pa-xl text-center">
+          <q-icon name="search_off" size="60px" color="grey-5" />
+          <div class="text-h6 q-mt-md">No se encontraron coincidencias</div>
+          <div class="text-grey-7 q-mb-md">
+            Intenta cambiar el texto de búsqueda o los filtros aplicados.
+          </div>
+          <q-btn outline color="primary" icon="clear" label="Limpiar filtros" @click="limpiarFiltros" />
+        </q-card>
+
+        <!-- Lista de Servicios Filtrados -->
         <div v-else class="row q-col-gutter-md">
-          <div v-for="(servicio, index) in servicios" :key="servicio.id"
+          <div v-for="(servicio, index) in serviciosFiltrados" :key="servicio.id"
             class="col-12 col-md-6 col-lg-4">
             <q-card bordered
               :class="{ 'border-negative': servicio.estadoPago === 'Pendiente' }">
@@ -76,10 +134,15 @@
                     {{ servicio.estadoPago }}
                   </q-chip>
 
-                  <q-chip v-if="servicio.estadoPago === 'Abono'"
-                    color="orange" text-color="white">
-                    Abono: ${{ formatearDinero(servicio.valorAbono) }}
-                  </q-chip>
+                  <template v-if="servicio.estadoPago === 'Abono'">
+                    <q-chip color="orange" text-color="white">
+                      Abono: ${{ formatearDinero(servicio.valorAbono) }}
+                    </q-chip>
+
+                    <q-chip color="negative" text-color="white" icon="pending_actions">
+                      Resta: ${{ formatearDinero(calcularSaldoPendiente(servicio.precio, servicio.valorAbono)) }}
+                    </q-chip>
+                  </template>
                 </div>
 
                 <div class="q-mb-sm">
@@ -104,7 +167,7 @@
 
                   <q-btn v-else outline color="orange" icon="star"
                     label="Calificar servicio"
-                    @click="abrirCalificacion(index)" />
+                    @click="abrirCalificacionPorId(servicio.id)" />
                 </div>
               </q-card-section>
 
@@ -113,9 +176,9 @@
               <q-card-actions align="right">
                 <template v-if="servicio.estadoEquipo !== 'Entregado'">
                   <q-btn flat color="primary" icon="edit" label="Editar"
-                    @click="editarServicio(index)" />
+                    @click="editarServicioPorId(servicio.id)" />
                   <q-btn flat color="negative" icon="delete" label="Eliminar"
-                    @click="confirmarEliminar(index)" />
+                    @click="confirmarEliminarPorId(servicio.id)" />
                 </template>
 
                 <q-chip v-else color="grey-7" text-color="white" icon="lock">
@@ -144,8 +207,13 @@
 
             <div class="row q-col-gutter-md">
               <q-select v-model="formulario.marca" label="Marca *"
-                outlined :options="marcas" :rules="[reglaRequerido]"
-                class="col-12 col-sm-6 q-mb-md" />
+                outlined use-input fill-input hide-selected input-debounce="0"
+                :options="opcionesMarcasFiltradas"
+                @filter="filtrarMarcas"
+                @new-value="crearMarca"
+                :rules="[reglaRequerido]"
+                class="col-12 col-sm-6 q-mb-md"
+                hint="Escribe para buscar o agregar una nueva marca" />
 
               <q-input v-model="formulario.modelo" label="Modelo *"
                 placeholder="Ej: Galaxy A15" outlined
@@ -265,10 +333,25 @@ import { useLocalStorage } from '@vueuse/core'
 
 const servicios = useLocalStorage('tecnofix-servicios', [])
 
-const marcas = [
+// Variables para búsqueda y filtros
+const filtroTexto = ref('')
+const filtroEstado = ref('Todos')
+const filtroPendientesPago = ref(false)
+
+const opcionesFiltroEstado = [
+  { etiqueta: 'Todos', valor: 'Todos' },
+  { etiqueta: 'Recibido', valor: 'Recibido' },
+  { etiqueta: 'En reparación', valor: 'En reparación' },
+  { etiqueta: 'Listo para entregar', valor: 'Listo para entregar' },
+  { etiqueta: 'Entregado', valor: 'Entregado' }
+]
+
+const marcas = ref([
   'Apple', 'Samsung', 'Xiaomi', 'Motorola', 'Huawei',
   'Honor', 'Oppo', 'Realme', 'Vivo', 'Nokia', 'LG', 'Otra'
-]
+])
+
+const opcionesMarcasFiltradas = ref([...marcas.value])
 
 const tiposReparacion = [
   'Cambio de pantalla', 'Cambio de batería', 'Cambio de pin de carga',
@@ -285,10 +368,63 @@ const dialogoFormulario = ref(false)
 const dialogoEliminar = ref(false)
 const dialogoCalificacion = ref(false)
 const editando = ref(false)
-const indiceEditar = ref(-1)
-const indiceEliminar = ref(-1)
-const indiceCalificacion = ref(-1)
+const idSeleccionado = ref(null)
 const calificacionTemporal = ref(0)
+
+// Computed Property para filtrar la lista dinámicamente
+const serviciosFiltrados = computed(() => {
+  return servicios.value.filter(s => {
+    // 1. Filtro por texto (cliente, marca o modelo)
+    const texto = filtroTexto.value.toLowerCase().trim()
+    const coincideTexto = !texto || 
+      s.cliente.toLowerCase().includes(texto) ||
+      s.marca.toLowerCase().includes(texto) ||
+      s.modelo.toLowerCase().includes(texto)
+
+    // 2. Filtro por estado del equipo
+    const coincideEstado = filtroEstado.value === 'Todos' || s.estadoEquipo === filtroEstado.value
+
+    // 3. Filtro por pendiente de pago
+    const coincidePago = !filtroPendientesPago.value || s.estadoPago === 'Pendiente'
+
+    return coincideTexto && coincideEstado && coincidePago
+  })
+})
+
+function limpiarFiltros() {
+  filtroTexto.value = ''
+  filtroEstado.value = 'Todos'
+  filtroPendientesPago.value = false
+}
+
+function filtrarMarcas(val, update) {
+  update(() => {
+    if (val === '') {
+      opcionesMarcasFiltradas.value = marcas.value
+    } else {
+      const aguja = val.toLowerCase()
+      opcionesMarcasFiltradas.value = marcas.value.filter(
+        v => v.toLowerCase().indexOf(aguja) > -1
+      )
+    }
+  })
+}
+
+function crearMarca(val, done) {
+  if (val.length > 0) {
+    if (!marcas.value.includes(val)) {
+      marcas.value.push(val)
+    }
+    done(val, 'toggle')
+  }
+}
+
+function calcularSaldoPendiente(precio, valorAbono) {
+  const total = Number(precio || 0)
+  const abono = Number(valorAbono || 0)
+  const restante = total - abono
+  return restante > 0 ? restante : 0
+}
 
 function obtenerFechaActual() {
   const ahora = new Date()
@@ -309,7 +445,7 @@ function crearFormulario() {
     cliente: '',
     marca: '',
     modelo: '',
-    reparacion: [], // Inicializado como arreglo para selección múltiple
+    reparacion: [],
     tecnico: '',
     fecha: obtenerFechaActual(),
     hora: obtenerHoraActual(),
@@ -392,7 +528,7 @@ function formatearDinero(valor) {
 function abrirFormulario() {
   formulario.value = crearFormulario()
   editando.value = false
-  indiceEditar.value = -1
+  idSeleccionado.value = null
   dialogoFormulario.value = true
 }
 
@@ -400,7 +536,7 @@ function cerrarFormulario() {
   dialogoFormulario.value = false
   formulario.value = crearFormulario()
   editando.value = false
-  indiceEditar.value = -1
+  idSeleccionado.value = null
 }
 
 function guardarServicio() {
@@ -417,12 +553,10 @@ function guardarServicio() {
     formulario.value.estadoEquipo
   ]
 
-  // Validar campos de texto vacíos
   if (obligatorios.some(valor => valor === '' || valor === null || valor === undefined)) {
     return
   }
 
-  // Validar selección múltiple de reparaciones
   if (!Array.isArray(formulario.value.reparacion) || formulario.value.reparacion.length === 0) {
     return
   }
@@ -435,11 +569,15 @@ function guardarServicio() {
   }
 
   if (editando.value) {
-    const servicioActual = servicios.value[indiceEditar.value]
-    if (!servicioActual || servicioActual.estadoEquipo === 'Entregado') return
-    servicios.value[indiceEditar.value] = {
-      ...formulario.value,
-      calificacion: servicioActual.calificacion || 0
+    const idx = servicios.value.findIndex(s => s.id === idSeleccionado.value)
+    if (idx !== -1) {
+      const servicioActual = servicios.value[idx]
+      if (servicioActual.estadoEquipo === 'Entregado') return
+      servicios.value[idx] = {
+        ...formulario.value,
+        id: idSeleccionado.value,
+        calificacion: servicioActual.calificacion || 0
+      }
     }
   } else {
     servicios.value.push({
@@ -451,16 +589,19 @@ function guardarServicio() {
   cerrarFormulario()
 }
 
-function editarServicio(index) {
-  const servicio = servicios.value[index]
+function editarServicioPorId(id) {
+  const servicio = servicios.value.find(s => s.id === id)
   if (!servicio || servicio.estadoEquipo === 'Entregado') return
 
-  // Asegura compatibilidad si la reparación antigua venía guardada como texto plano
   let reparacionFormateada = []
   if (Array.isArray(servicio.reparacion)) {
     reparacionFormateada = [...servicio.reparacion]
   } else if (servicio.reparacion) {
     reparacionFormateada = [servicio.reparacion]
+  }
+
+  if (servicio.marca && !marcas.value.includes(servicio.marca)) {
+    marcas.value.push(servicio.marca)
   }
 
   formulario.value = {
@@ -470,48 +611,48 @@ function editarServicio(index) {
     reparacion: reparacionFormateada
   }
   editando.value = true
-  indiceEditar.value = index
+  idSeleccionado.value = id
   dialogoFormulario.value = true
 }
 
-function confirmarEliminar(index) {
-  const servicio = servicios.value[index]
+function confirmarEliminarPorId(id) {
+  const servicio = servicios.value.find(s => s.id === id)
   if (!servicio || servicio.estadoEquipo === 'Entregado') return
 
-  indiceEliminar.value = index
+  idSeleccionado.value = id
   dialogoEliminar.value = true
 }
 
 function eliminarServicio() {
-  const index = indiceEliminar.value
-  if (index >= 0 && servicios.value[index]?.estadoEquipo !== 'Entregado') {
-    servicios.value.splice(index, 1)
+  const idx = servicios.value.findIndex(s => s.id === idSeleccionado.value)
+  if (idx !== -1 && servicios.value[idx]?.estadoEquipo !== 'Entregado') {
+    servicios.value.splice(idx, 1)
   }
-  indiceEliminar.value = -1
+  idSeleccionado.value = null
   dialogoEliminar.value = false
 }
 
-function abrirCalificacion(index) {
-  const servicio = servicios.value[index]
+function abrirCalificacionPorId(id) {
+  const servicio = servicios.value.find(s => s.id === id)
   if (!servicio || servicio.estadoEquipo !== 'Entregado') return
 
-  indiceCalificacion.value = index
+  idSeleccionado.value = id
   calificacionTemporal.value = servicio.calificacion || 0
   dialogoCalificacion.value = true
 }
 
 function cerrarCalificacion() {
   dialogoCalificacion.value = false
-  indiceCalificacion.value = -1
+  idSeleccionado.value = null
   calificacionTemporal.value = 0
 }
 
 function guardarCalificacion() {
-  const index = indiceCalificacion.value
-  if (index < 0 || servicios.value[index]?.estadoEquipo !== 'Entregado') return
+  const idx = servicios.value.findIndex(s => s.id === idSeleccionado.value)
+  if (idx === -1 || servicios.value[idx]?.estadoEquipo !== 'Entregado') return
 
-  servicios.value[index] = {
-    ...servicios.value[index],
+  servicios.value[idx] = {
+    ...servicios.value[idx],
     calificacion: calificacionTemporal.value
   }
 
